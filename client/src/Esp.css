@@ -1,0 +1,72 @@
+/* App.css */
+@keyframes moveGradient {
+    0% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+    100% {
+      background-position: 0% 50%;
+    }
+  }
+  
+  .sidebar {
+    width: 250px;
+    background: linear-gradient(270deg, #ff9a9e, #fad0c4, #fbc2eb, #a6c1ee, #fbc2eb, #fad0c4, #ff9a9e);
+    background-size: 400% 400%;
+    animation: moveGradient 15s ease infinite;
+    padding: 20px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  }
+  
+  .navbar-brand, .nav-link {
+    color: rgb(200, 170, 170) !important; /* Texte blanc pour contraster avec le fond animé */
+    font-weight: bold;
+  }
+  
+  .nav-link {
+    margin-left: 1rem;
+    transition: color 0.3s ease;
+  }
+  
+  .nav-link:hover {
+    color: #fbc2eb !important; /* Changement de couleur au survol */
+  }
+  
+  .app-container {
+    display: flex;
+    height: 100vh;
+    background-color: #f8f9fa; /* Fond uni pour le reste de la page */
+  }
+  
+  .main-content {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+  }
+  
+  .column {
+    background-color: rgba(255, 255, 255, 0.9); /* Fond blanc semi-transparent */
+    border-radius: 10px;
+    padding: 10px;
+    width: 30%;
+    min-height: 400px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  }
+  
+  .task-card {
+    background-color: #fff;
+    border-radius: 5px;
+    padding: 10px;
+    margin-bottom: 10px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    user-select: none;
+  }
+  
+  .form-container {
+    background-color: rgba(255, 255, 255, 0.9); /* Fond blanc semi-transparent */
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  }
