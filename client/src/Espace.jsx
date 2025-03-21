@@ -164,6 +164,7 @@ if (error) {
                 {board.name}
               </Nav.Link>
             </Nav.Item>
+            
           ))}
         </Nav>
         <div className="main-content">

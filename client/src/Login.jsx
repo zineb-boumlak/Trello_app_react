@@ -14,7 +14,7 @@ const Login = () => {
             const response = await axios.post('http://localhost:3001/login', { email, password });
             if (response.data.message === "Success") {
                 localStorage.setItem('token', response.data.token); // Stocker le token
-                navigate('/espace'); // Rediriger vers l'espace de travail
+                navigate('/workspace'); // Rediriger vers l'espace de travail
             } else {
                 setError("Email ou mot de passe incorrect.");
             }

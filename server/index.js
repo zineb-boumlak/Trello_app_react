@@ -3,70 +3,101 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
-const UserModel = require('./models/User'); 
+const authMiddleware = require('./middleware/authMiddleware');
+const User = require('./models/User');
+const Table = require('./models/Table');
+const Member = require('./models/Member');
+require('dotenv').config();
+
 const app = express();
-const SECRET_KEY = 'votre_secret_key'; 
+
+// Middleware
+app.use(cors());
 app.use(express.json());
-app.use(cors({
-    origin: 'http://localhost:5174', 
-    credentials: true,
-}));
 
-mongoose.connect("mongodb://127.0.0.1:27017/employee")
-    .then(() => console.log("Connected to MongoDB"))
-    .catch(err => console.error("Failed to connect to MongoDB:", err));
+// Connexion à MongoDB
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+  .then(() => console.log('Connected to MongoDB'))
+  .catch((err) => console.error('Failed to connect to MongoDB:', err));
 
-app.post('/login', async (req, res) => {
-    const { email, password } = req.body;
+// Routes publiques (sans authentification)
+app.post('/api/register', async (req, res) => {
+  const { name, email, password } = req.body;
 
-    try {
-        const user = await UserModel.findOne({ email });
-        if (!user) {
-            return res.status(400).json({ error: "Email ou mot de passe incorrect." });
-        }
-
-        const isMatch = await user.comparePassword(password);
-        if (!isMatch) {
-            return res.status(400).json({ error: "Email ou mot de passe incorrect." });
-        }
-
-        const token = jwt.sign({ id: user._id }, SECRET_KEY, { expiresIn: '1h' });
-        res.json({ message: "Success", token, user: { id: user._id, name: user.name, email: user.email } });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+  try {
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ error: 'Un compte avec cet email existe déjà.' });
     }
+
+    const user = await User.create({ name, email, password });
+    res.status(201).json(user);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.get('/espace', (req, res) => {
-    const token = req.headers['authorization']?.split(' ')[1];
-    if (!token) {
-        return res.status(401).json({ error: 'Token manquant.' });
+app.post('/api/login', async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ error: 'Email ou mot de passe incorrect.' });
     }
 
-    try {
-        const decoded = jwt.verify(token, SECRET_KEY);
-        res.json({ message: 'Accès autorisé', data: { userId: decoded.id, email: decoded.email } });
-    } catch (err) {
-        res.status(401).json({ error: 'Token invalide ou expiré.' });
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
+      return res.status(400).json({ error: 'Email ou mot de passe incorrect.' });
     }
+
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+    res.json({ token, user: { id: user._id, name: user.name, email: user.email } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.post('/register', async (req, res) => {
-    const { email } = req.body;
+// Routes protégées (avec authentification)
+app.use(authMiddleware);
 
-    try {
-        const existingUser = await UserModel.findOne({ email });
-        if (existingUser) {
-            return res.status(400).json({ error: "Un compte avec cet email existe déjà." });
-        }
+app.post('/api/tables', async (req, res) => {
+  const { title } = req.body;
+  const userId = req.user._id;
 
-        const user = await UserModel.create(req.body);
-        res.json(user);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+  try {
+    const newTable = await Table.create({ title, userId });
+    res.status(201).json(newTable);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.listen(3001, () => {
-    console.log("Server is running on port 3001");
+app.get('/api/tables', async (req, res) => {
+  const userId = req.user._id;
+
+  try {
+    const tables = await Table.find({ userId }).sort({ createdAt: -1 });
+    res.json(tables);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/members', async (req, res) => {
+  try {
+    const members = await Member.find();
+    res.json(members);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Démarrer le serveur
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
 });
