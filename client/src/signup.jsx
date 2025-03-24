@@ -10,19 +10,24 @@ const Signup = () => {
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const navigate = useNavigate();
+    const [loading, setLoading] = useState(false);
 
     const handleSubmit = (e) => {
         e.preventDefault();
+        setLoading(true);
         axios.post('http://localhost:3001/register', { name, email, password })
             .then(result => {
                 console.log("Server response:", result.data);
                 navigate('/login');
             })
             .catch(err => {
-                if (err.response && err.response.data.error) {
-                    setError(err.response.data.error); // Afficher l'erreur
+                setLoading(false);
+                if (err.response) {
+                    setError(err.response.data.error || "Erreur inconnue.");
+                } else if (err.request) {
+                    setError("Le serveur ne répond pas. Vérifiez votre connexion.");
                 } else {
-                    setError("Une erreur s'est produite lors de l'inscription.");
+                    setError("Une erreur est survenue.");
                 }
             });
     };
@@ -34,13 +39,13 @@ const Signup = () => {
                     <div className="animated-background p-5 rounded">
                         <form className="form-container" onSubmit={handleSubmit}>
                             <h3 className="text-center mb-4">Inscription</h3>
-                            {error && <div className="alert alert-danger">{error}</div>} 
+                            {error && <div className="alert alert-danger">{error}</div>}
                             <div className="mb-3">
                                 <label htmlFor="username" className="form-label">Nom d'utilisateur</label>
                                 <input
                                     type="text"
                                     className="form-control"
-                                    name="username"
+                                    name="name"
                                     placeholder="Username"
                                     onChange={(e) => setName(e.target.value)}
                                     required
@@ -68,8 +73,8 @@ const Signup = () => {
                                     required
                                 />
                             </div>
-                            <button type="submit" className="btn btn-primary w-100">
-                                S'inscrire
+                            <button type="submit" className="btn btn-primary w-100" disabled={loading}>
+                                {loading ? "Inscription..." : "S'inscrire"}
                             </button>
                         </form>
                     </div>

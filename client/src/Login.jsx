@@ -6,54 +6,87 @@ const Login = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
+    const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        setLoading(true);
+        setError('');
+    
         try {
-            const response = await axios.post('http://localhost:3001/login', { email, password });
-            if (response.data.message === "Success") {
-                localStorage.setItem('token', response.data.token); // Stocker le token
-                navigate('/workspace'); // Rediriger vers l'espace de travail
+            const response = await axios.post('http://localhost:3001/login', {
+                email: email.trim(),
+                password
+            }, {
+                timeout: 8000,
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+    
+            if (response.data.token) {
+                localStorage.setItem('authToken', response.data.token);
+                localStorage.setItem('userData', JSON.stringify(response.data.user));
+                navigate('/workspace'); 
             } else {
-                setError("Email ou mot de passe incorrect.");
+                throw new Error('Réponse inattendue du serveur');
             }
         } catch (err) {
-            setError(err.response?.data?.error || "Une erreur s'est produite lors de la connexion.");
+            const errorDetails = {
+                status: err.response?.status,
+                data: err.response?.data,
+                message: err.message
+            };
+            console.error('Détails de l\'erreur:', errorDetails);
+            
+            setError(
+                err.response?.data?.error || 
+                'Échec de la connexion. Veuillez réessayer.'
+            );
+        } finally {
+            setLoading(false);
         }
     };
+
     return (
         <div className="container mt-5">
             <div className="row justify-content-center">
                 <div className="col-md-6">
-                    <div className="animated-background p-5 rounded">
-                        <form className="form-container" onSubmit={handleSubmit}>
-                            <h3 className="text-center mb-4">Connexion</h3>
-                            {error && <div className="alert alert-danger">{error}</div>} {/* Afficher l'erreur */}
+                    <div className="card p-4">
+                        <h2 className="text-center mb-4">Connexion</h2>
+                        
+                        {error && <div className="alert alert-danger">{error}</div>}
+
+                        <form onSubmit={handleSubmit}>
                             <div className="mb-3">
-                                <label htmlFor="email" className="form-label">Email</label>
+                                <label className="form-label">Email</label>
                                 <input
                                     type="email"
                                     className="form-control"
-                                    name="email"
-                                    placeholder="Email"
+                                    value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     required
                                 />
                             </div>
+
                             <div className="mb-3">
-                                <label htmlFor="password" className="form-label">Mot de passe</label>
+                                <label className="form-label">Mot de passe</label>
                                 <input
                                     type="password"
                                     className="form-control"
-                                    name="password"
-                                    placeholder="Password"
+                                    value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     required
                                 />
                             </div>
-                            <button type="submit" className="btn btn-primary w-100">
-                                Se connecter
+
+                            <button 
+                                type="submit" 
+                                className="btn btn-primary w-100"
+                                disabled={loading}
+                            >
+                                {loading ? 'Connexion en cours...' : 'Se connecter'}
                             </button>
                         </form>
                     </div>
