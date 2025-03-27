@@ -1,73 +1,33 @@
-/* Conteneur principal */
 .workspace-container {
-    display: flex;
     min-height: 100vh;
     background-color: #f8f9fa;
   }
   
-  /* Sidebar */
   .sidebar {
-    width: 250px;
+    height: 100vh;
+    position: sticky;
+    top: 0;
     border-right: 1px solid #dee2e6;
   }
   
-  .sidebar h2 {
-    font-size: 1.5rem;
-    font-weight: bold;
-    color: #333;
-  }
-  
-  .sidebar ul li {
-    transition: transform 0.2s ease-in-out;
-  }
-  
-  .sidebar ul li:hover {
-    transform: translateX(5px);
-  }
-  
-  /* Main Content */
-  .main-content {
-    flex: 1;
-    padding: 20px;
-  }
-  
-  .main-content h3 {
-    font-size: 1.75rem;
-    font-weight: bold;
-    color: #333;
-  }
-  
-  .main-content .card {
-    background-color: #fff;
-    border: none;
-    border-radius: 10px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  }
-  
-  /* Bouton pour créer un tableau */
-  .create-table-button {
-    cursor: pointer;
-    padding: 10px;
-    background-color: #e9ecef;
-    border-radius: 5px;
-    transition: background-color 0.2s ease-in-out;
-  }
-  
-  .create-table-button:hover {
-    background-color: #dee2e6;
-  }
-  
-  /* Tableaux créés */
-  .tables-container {
-    margin-top: 10px;
-  }
-  
   .table-card {
-    width: 200px;
-    border: 1px solid #dee2e6;
-    transition: transform 0.2s ease-in-out;
+    transition: transform 0.2s, box-shadow 0.2s;
+    cursor: pointer;
   }
   
   .table-card:hover {
     transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+  }
+  
+  .main-content {
+    background-color: white;
+    min-height: 100vh;
+  }
+  
+  @media (max-width: 768px) {
+    .sidebar {
+      height: auto;
+      position: relative;
+    }
   }

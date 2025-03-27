@@ -2,28 +2,48 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
 const authMiddleware = async (req, res, next) => {
-  try {
-    // Récupérer le token du header
-    const token = req.header('Authorization').replace('Bearer ', '');
-    if (!token) {
-      throw new Error('Authorization denied. No token provided.');
-    }
+  let token;
+  
+  // 1. Vérifier la présence du token dans Authorization header ou cookies
+  if (
+    req.headers.authorization && 
+    req.headers.authorization.startsWith('Bearer')
+  ) {
+    token = req.headers.authorization.split(' ')[1];
+  } else if (req.cookies.token) {
+    token = req.cookies.token;
+  }
 
-    // Vérifier le token
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      error: 'Not authorized to access this route'
+    });
+  }
+
+  try {
+    // 2. Vérification du token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // Trouver l'utilisateur associé au token
-    const user = await User.findById(decoded.id);
+    // 3. Trouver l'utilisateur
+    const user = await User.findById(decoded.id).select('-password');
+
     if (!user) {
-      throw new Error('User not found.');
+      return res.status(404).json({
+        success: false,
+        error: 'No user found with this id'
+      });
     }
 
-    // Attacher l'utilisateur à l'objet `req`
+    // 4. Ajouter l'utilisateur à req object
     req.user = user;
-    next(); // Passer au prochain middleware ou à la route
+    next();
   } catch (err) {
-    res.status(401).json({ error: 'Authorization denied. Invalid token.' });
+    return res.status(401).json({
+      success: false,
+      error: 'Not authorized to access this route'
+    });
   }
 };
 
-module.exports = authMiddleware; // Exporter la fonction middleware
+module.exports = authMiddleware;

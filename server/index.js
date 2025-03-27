@@ -2,268 +2,248 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+const cookieParser = require('cookie-parser');
+const jwt = require('jsonwebtoken'); // Ajout de l'import jwt
+const rateLimit = require('express-rate-limit');
+const helmet = require('helmet');
+const mongoSanitize = require('express-mongo-sanitize');
+
+// Initialisation de l'application
 const app = express();
 
-// Middleware
+// Configuration de sécurité
+app.use(helmet());
+app.use(mongoSanitize());
+app.use(express.json({ limit: '10kb' }));
+app.use(cookieParser());
+
+// Middleware CORS configuré explicitement
 app.use(cors({
   origin: 'http://localhost:5173',
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
 }));
-app.use(express.json());
-
-// Modèles Mongoose
-const UserSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
-  password: { type: String, required: true }
-});
-
-const InvitationSchema = new mongoose.Schema({
-  inviter: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  invitee: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  status: { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' },
-  createdAt: { type: Date, default: Date.now }
-});
-
-const TableSchema = new mongoose.Schema({
-  title: { type: String, required: true },
-  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  createdAt: { type: Date, default: Date.now }
-});
-
-const User = mongoose.model('User', UserSchema);
-const Invitation = mongoose.model('Invitation', InvitationSchema);
-const Table = mongoose.model('Table', TableSchema);
 
 // Connexion MongoDB
-mongoose.connect(process.env.MONGO_URI)
+mongoose.connect('mongodb://127.0.0.1:27017/employee')
   .then(() => console.log('✅ Connecté à MongoDB'))
   .catch(err => console.error('❌ Erreur MongoDB:', err));
 
-// Middleware d'authentification
-const authenticate = (req, res, next) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  if (!token) return res.status(401).json({ error: 'Accès non autorisé' });
+// Modèle Table
+const Table = mongoose.model('Table', new mongoose.Schema({
+    name: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now
+    }
+  }));
+  
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 10, // Limite chaque IP à 10 requêtes par fenêtre
+    message: 'Trop de requêtes, veuillez réessayer plus tard'
+  });
+// Routes API Tables
+const tableRouter = express.Router();
 
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.userId = decoded.id;
-    next();
-  } catch (err) {
-    res.status(401).json({ error: 'Token invalide' });
-  }
+tableRouter.route('/')
+  .get(async (req, res) => {
+    try {
+      const tables = await Table.find().sort({ createdAt: -1 });
+      res.json({ success: true, data: tables });
+      console.log(res);
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  })
+  .post(async (req, res) => {
+    try {
+      if (!req.body.name?.trim()) {
+        return res.status(400).json({ 
+          success: false,
+          error: 'Le nom est requis' 
+        });
+      }
+
+      const newTable = await Table.create({ name: req.body.name,createdAt:req.body.createdAt  });
+      console.log(newTable);
+      res.status(201).json({ success: true, data: newTable });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+  
+  tableRouter.route('/:id')
+  .get(async (req, res) => {
+    try {
+      const table = await Table.findById(req.params.id);
+      
+      if (!table) {
+        return res.status(404).json({
+          success: false,
+          error: 'Tableau non trouvé'
+        });
+      }
+
+      res.json({
+        success: true,
+        data: table
+      });
+    } catch (err) {
+      res.status(500).json({
+        success: false,
+        error: err.message
+      });
+    }
+  });
+
+// Montage des routes
+app.use('/api/tables', tableRouter); // Cette ligne est cruciale
+// Fonction pour générer le token
+const generateToken = (id) => {
+  return jwt.sign({ id }, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRE || '1h'
+  });
 };
 
 // Routes
-app.post('/register', async (req, res) => {
+app.post('/register', authLimiter, async (req, res) => {
   try {
     const { name, email, password } = req.body;
     
     if (!name || !email || !password) {
-      return res.status(400).json({ error: 'Tous les champs sont requis' });
+      return res.status(400).json({ 
+        success: false,
+        error: 'Tous les champs sont requis' 
+      });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({
+        success: false,
+        error: 'Le mot de passe doit contenir au moins 8 caractères'
+      });
     }
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res.status(400).json({ error: 'Email déjà utilisé' });
+      return res.status(409).json({ 
+        success: false,
+        error: 'Email déjà utilisé' 
+      });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await User.create({ name, email, password: hashedPassword });
+    const user = await User.create({ name, email, password });
 
-    res.status(201).json({ message: 'Utilisateur créé avec succès' });
+    const token = generateToken(user._id);
+
+    const cookieOptions = {
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 jours
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict'
+    };
+
+    res.status(201)
+      .cookie('token', token, cookieOptions)
+      .json({
+        success: true,
+        token,
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role
+        }
+      });
   } catch (err) {
     console.error('Erreur inscription:', err);
-    res.status(500).json({ error: 'Erreur serveur' });
+    res.status(500).json({ 
+      success: false,
+      error: 'Erreur serveur' 
+    });
   }
 });
 
-app.post('/login', async (req, res) => {
+app.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     
     if (!email || !password) {
-      return res.status(400).json({ error: 'Email et mot de passe requis' });
+      return res.status(400).json({ 
+        success: false,
+        error: 'Email et mot de passe requis' 
+      });
     }
 
     const user = await User.findOne({ email }).select('+password');
-    if (!user) {
-      return res.status(401).json({ error: 'Identifiants incorrects' });
+    
+    if (!user || !(await user.comparePassword(password))) {
+      return res.status(401).json({ 
+        success: false,
+        error: 'Identifiants incorrects' 
+      });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(401).json({ error: 'Identifiants incorrects' });
-    }
+    const token = generateToken(user._id);
 
-    const token = jwt.sign(
-      { id: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: '1h' }
-    );
+    const cookieOptions = {
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 jours
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict'
+    };
 
-    res.json({
-      token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email
-      }
-    });
+    res.status(200)
+      .cookie('token', token, cookieOptions)
+      .json({
+        success: true,
+        token,
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role
+        }
+      });
   } catch (err) {
     console.error('ERREUR LOGIN:', err);
-    res.status(500).json({ error: 'Erreur serveur' });
-  }
-});
-
-// Recherche d'utilisateurs
-app.get('/api/users/search', authenticate, async (req, res) => {
-  try {
-    const { name } = req.query;
-
-    if (!name || name.length < 2) {
-      return res.status(400).json({ error: 'Le terme de recherche doit contenir au moins 2 caractères' });
-    }
-
-    const users = await User.find({
-      name: { $regex: name, $options: 'i' },
-      _id: { $ne: req.userId }
-    }).select('name email _id');
-
-    res.json(users);
-  } catch (err) {
-    console.error('Erreur recherche:', err);
-    res.status(500).json({ error: 'Erreur serveur' });
-  }
-});
-
-// Gestion des invitations
-app.post('/invitations', authenticate, async (req, res) => {
-  try {
-    const { userIds } = req.body;
-    
-    if (!userIds || !Array.isArray(userIds)) {
-      return res.status(400).json({ error: 'Liste d\'utilisateurs invalide' });
-    }
-
-    const invitations = await Promise.all(
-      userIds.map(userId => 
-        Invitation.create({
-          inviter: req.userId,
-          invitee: userId,
-          status: 'pending'
-        })
-      )
-    );
-
-    res.status(201).json({ message: 'Invitations envoyées', invitations });
-  } catch (err) {
-    console.error('Erreur envoi invitations:', err);
-    res.status(500).json({ error: 'Erreur serveur' });
-  }
-});
-
-// Gestion des tableaux
-app.get('/tables/:userId', authenticate, async (req, res) => {
-  try {
-    const tables = await Table.find({ createdBy: req.params.userId });
-    res.json(tables);
-  } catch (err) {
-    console.error('Erreur récupération tableaux:', err);
-    res.status(500).json({ error: 'Erreur serveur' });
-  }
-});
-
-app.post('/tables', authenticate, async (req, res) => {
-  try {
-    const { title } = req.body;
-    
-    if (!title) {
-      return res.status(400).json({ error: 'Le titre est requis' });
-    }
-
-    const table = await Table.create({
-      title,
-      createdBy: req.userId
+    res.status(500).json({ 
+      success: false,
+      error: 'Erreur serveur' 
     });
-
-    res.status(201).json(table);
-  } catch (err) {
-    console.error('Erreur création tableau:', err);
-    res.status(500).json({ error: 'Erreur serveur' });
-  }
-});
-// Route pour rechercher des utilisateurs
-app.get('/api/users/search', authenticate, async (req, res) => {
-    try {
-      const { name } = req.query;
-  
-      // Validation
-      if (!name || name.length < 2) {
-        return res.status(400).json({ error: 'Le terme de recherche doit contenir au moins 2 caractères' });
-      }
-  
-      // Recherche insensible à la casse, excluant l'utilisateur courant
-      const users = await User.find({
-        name: { $regex: name, $options: 'i' },
-        _id: { $ne: req.userId }
-      }).select('name email _id'); // Ne retourne que ces champs
-  
-      res.json(users);
-    } catch (err) {
-      console.error('Erreur recherche:', err);
-      res.status(500).json({ error: 'Erreur serveur' });
-    }
-  });
-  
-  // Route pour ajouter des membres
-  app.post('/api/members', authenticate, async (req, res) => {
-    try {
-      const { userId, workspaceId } = req.body;
-  
-      // Vérifier si l'utilisateur existe déjà comme membre
-      const existingMember = await Member.findOne({ 
-        userId, 
-        workspaceId 
-      });
-  
-      if (existingMember) {
-        return res.status(400).json({ error: 'Cet utilisateur est déjà membre de ce workspace' });
-      }
-  
-      // Créer le nouveau membre
-      const member = await Member.create({ 
-        userId,
-        workspaceId,
-        addedBy: req.userId, // Celui qui a invité
-        role: 'member', // Par défaut
-        joinedAt: new Date()
-      });
-  
-      res.status(201).json(member);
-    } catch (err) {
-      console.error('Erreur ajout membre:', err);
-      res.status(500).json({ error: 'Erreur serveur' });
-    }
-  });
-
-// Liste des membres
-app.get('/members', authenticate, async (req, res) => {
-  try {
-    const members = await User.find({}).select('name email _id').limit(50);
-    res.json(members);
-  } catch (err) {
-    console.error('Erreur récupération membres:', err);
-    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-// Démarrer le serveur
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`🚀 Serveur lancé sur http://localhost:${PORT}`);
+app.get('/logout', (req, res) => {
+  res.clearCookie('token')
+    .status(200)
+    .json({ success: true, message: 'Déconnexion réussie' });
 });
+
+// Gestion des erreurs 404
+app.all('*', (req, res) => {
+    res.status(404).json({
+      success: false,
+      error: `Route ${req.originalUrl} non trouvée`
+    });
+  });
+  
+  // Gestion des erreurs globales
+  app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).json({
+      success: false,
+      error: 'Erreur serveur'
+    });
+  });
+  
+  const PORT = process.env.PORT || 3001;
+  app.listen(PORT, () => {
+    console.log(`🚀 Serveur démarré sur http://localhost:${PORT}`);
+  });

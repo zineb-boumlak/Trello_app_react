@@ -3,7 +3,9 @@ import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
 import Signup from './signup';
 import Login from './Login';
 import Espace from './Espace';
-import Workspace from './workspace';
+import WorkSpace from './espace de travail';
+import TablePage from './TablePage'; // Ajout de l'import manquant
+
 import 'bootstrap/dist/css/bootstrap.min.css'; 
 import './App.css'; 
 
@@ -32,7 +34,8 @@ function App() {
         <Route path="/register" element={<Signup />} />
         <Route path="/login" element={<Login />} />
         <Route path="/Espace" element={<Espace />} />
-        <Route path="/workspace" element={<Workspace setShowNavbar={setShowNavbar} />} />
+        <Route path="/workspace" element={<WorkSpace setShowNavbar={setShowNavbar} />} />
+        <Route path="/table/:id" element={<TablePage setShowNavbar={setShowNavbar} />} />
       </Routes>
     </BrowserRouter>
   );
