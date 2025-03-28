@@ -6,6 +6,7 @@ const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken'); // Ajout de l'import jwt
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
+const User = require('./models/User');
 const mongoSanitize = require('express-mongo-sanitize');
 
 // Initialisation de l'application
@@ -37,31 +38,75 @@ const Table = mongoose.model('Table', new mongoose.Schema({
       required: true,
       trim: true
     },
+    userId: {  // Ajoutez cette référence
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    },
+    email: {  // Optionnel: stocker aussi l'email pour faciliter les requêtes
+      type: String,
+      required: true
+    },
     createdAt: {
       type: Date,
       default: Date.now
     }
   }));
-  
   const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 10, // Limite chaque IP à 10 requêtes par fenêtre
+    max: 100, // Limite chaque IP à 10 requêtes par fenêtre
     message: 'Trop de requêtes, veuillez réessayer plus tard'
   });
+  const authenticate = async (req, res, next) => {
+    try {
+      const token = req.cookies.token || req.headers.authorization?.split(' ')[1];
+      
+      if (!token) {
+        return res.status(401).json({ 
+          success: false,
+          error: 'Non autorisé, token manquant' 
+        });
+      }
+  
+      const decoded = jwt.verify(token, process.env.JWT_SECRET); // Assurez-vous que JWT_SECRET est bien défini
+      const user = await User.findById(decoded.id); // Récupère l'utilisateur depuis la base de données
+      
+      if (!user) {
+        return res.status(401).json({ 
+          success: false,
+          error: 'Utilisateur non trouvé' 
+        });
+      }
+  
+      req.user = { // Définit req.user avec les infos nécessaires
+        id: user._id,
+        email: user.email,
+        name: user.name
+      };
+  
+      next();
+    } catch (err) {
+      return res.status(401).json({ 
+        success: false,
+        error: 'Non autorisé, token invalide' 
+      });
+    }
+  };
 // Routes API Tables
 const tableRouter = express.Router();
 
+// Routes API Tables (dans index.js)
 tableRouter.route('/')
-  .get(async (req, res) => {
+  .get(authenticate, async (req, res) => {
     try {
-      const tables = await Table.find().sort({ createdAt: -1 });
+      // Ne retourne que les tableaux de l'utilisateur connecté
+      const tables = await Table.find({ userId: req.user.id }).sort({ createdAt: -1 });
       res.json({ success: true, data: tables });
-      console.log(res);
     } catch (err) {
       res.status(500).json({ success: false, error: err.message });
     }
   })
-  .post(async (req, res) => {
+  .post(authenticate, async (req, res) => {
     try {
       if (!req.body.name?.trim()) {
         return res.status(400).json({ 
@@ -70,18 +115,25 @@ tableRouter.route('/')
         });
       }
 
-      const newTable = await Table.create({ name: req.body.name,createdAt:req.body.createdAt  });
-      console.log(newTable);
+      const newTable = await Table.create({ 
+        name: req.body.name,
+        userId: req.user.id,
+        email: req.user.email
+      });
+
       res.status(201).json({ success: true, data: newTable });
     } catch (err) {
       res.status(500).json({ success: false, error: err.message });
     }
   });
-  
-  tableRouter.route('/:id')
-  .get(async (req, res) => {
+
+tableRouter.route('/:id')
+  .get(authenticate, async (req, res) => {
     try {
-      const table = await Table.findById(req.params.id);
+      const table = await Table.findOne({ 
+        _id: req.params.id,
+        userId: req.user.id 
+      });
       
       if (!table) {
         return res.status(404).json({
@@ -90,17 +142,79 @@ tableRouter.route('/')
         });
       }
 
-      res.json({
+      res.json({ success: true, data: table });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  })
+  .put(authenticate, async (req, res) => {
+    try {
+      const table = await Table.findOneAndUpdate(
+        { _id: req.params.id, userId: req.user.id },
+        { name: req.body.name },
+        { new: true }
+      );
+
+      if (!table) {
+        return res.status(404).json({
+          success: false,
+          error: 'Tableau non trouvé ou non autorisé'
+        });
+      }
+
+      res.json({ success: true, data: table });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  })
+  .delete(authenticate, async (req, res) => {
+    try {
+      const table = await Table.findOneAndDelete({ 
+        _id: req.params.id,
+        userId: req.user.id 
+      });
+
+      if (!table) {
+        return res.status(404).json({
+          success: false,
+          error: 'Tableau non trouvé ou non autorisé'
+        });
+      }
+
+      res.json({ 
         success: true,
-        data: table
+        message: 'Tableau supprimé avec succès' 
       });
     } catch (err) {
-      res.status(500).json({
-        success: false,
-        error: err.message
-      });
+      res.status(500).json({ success: false, error: err.message });
     }
   });
+// Route optionnelle pour vérifier les permissions d'édition
+tableRouter.get('/:id/check-edit', authenticate, async (req, res) => {
+  try {
+    const table = await Table.findById(req.params.id);
+    
+    if (!table) {
+      return res.status(404).json({
+        canEdit: false,
+        error: 'Tableau non trouvé'
+      });
+    }
+
+    // Ici vous pouvez ajouter une logique de vérification des permissions
+    // Par exemple, vérifier si l'utilisateur est le propriétaire
+    // if (table.userId.toString() !== req.userId) { ... }
+
+    res.json({
+      canEdit: true
+    });
+  } catch (err) {
+    res.status(500).json({
+      canEdit: false,
+      error: err.message
+    });
+  }
+});
 
 // Montage des routes
 app.use('/api/tables', tableRouter); // Cette ligne est cruciale
@@ -171,60 +285,76 @@ app.post('/register', authLimiter, async (req, res) => {
 });
 
 app.post('/login', authLimiter, async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    
-    if (!email || !password) {
-      return res.status(400).json({ 
+    try {
+      const { email, password } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ 
+          success: false,
+          error: 'Email et mot de passe requis' 
+        });
+      }
+  
+      const user = await User.findOne({ email }).select('+password');
+      
+      if (!user || !(await user.comparePassword(password))) {
+        return res.status(401).json({ 
+          success: false,
+          error: 'Identifiants incorrects' 
+        });
+      }
+  
+      const token = generateToken(user._id);
+  
+      const cookieOptions = {
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 jours
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict'
+      };
+  
+      res.status(200)
+        .cookie('token', token, cookieOptions)
+        .json({
+          success: true,
+          token,
+          user: {
+            id: user._id,
+            name: user.name,
+            email: user.email,
+            role: user.role
+          }
+        });
+    } catch (err) {
+      console.error('Erreur connexion:', err);
+      res.status(500).json({ 
         success: false,
-        error: 'Email et mot de passe requis' 
+        error: 'Erreur serveur' 
       });
     }
+  });
 
-    const user = await User.findOne({ email }).select('+password');
-    
-    if (!user || !(await user.comparePassword(password))) {
-      return res.status(401).json({ 
+  app.post('/logout', (req, res) => {  // Changé de GET à POST
+    try {
+      res.clearCookie('token', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        path: '/'
+      })
+      .status(200)
+      .json({ 
+        success: true, 
+        message: 'Déconnexion réussie' 
+      });
+    } catch (err) {
+      console.error('Erreur lors de la déconnexion:', err);
+      res.status(500).json({
         success: false,
-        error: 'Identifiants incorrects' 
+        error: 'Erreur lors de la déconnexion'
       });
     }
-
-    const token = generateToken(user._id);
-
-    const cookieOptions = {
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 jours
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict'
-    };
-
-    res.status(200)
-      .cookie('token', token, cookieOptions)
-      .json({
-        success: true,
-        token,
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role
-        }
-      });
-  } catch (err) {
-    console.error('ERREUR LOGIN:', err);
-    res.status(500).json({ 
-      success: false,
-      error: 'Erreur serveur' 
-    });
-  }
-});
-
-app.get('/logout', (req, res) => {
-  res.clearCookie('token')
-    .status(200)
-    .json({ success: true, message: 'Déconnexion réussie' });
-});
+  });
 
 // Gestion des erreurs 404
 app.all('*', (req, res) => {

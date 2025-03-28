@@ -19,29 +19,34 @@ const Login = () => {
                 email: email.trim(),
                 password
             }, {
-                timeout: 8000,
+                withCredentials: true,
                 headers: {
                     'Content-Type': 'application/json'
                 }
             });
-    
-            if (response.data.token) {
-                localStorage.setItem('authToken', response.data.token);
-                localStorage.setItem('userData', JSON.stringify(response.data.user));
-                navigate('/workspace'); 
-            } else {
-                throw new Error('Réponse inattendue du serveur');
+
+            // Vérification plus robuste de la réponse
+            if (!response.data.user || !response.data.token) {
+                throw new Error('Réponse du serveur invalide');
             }
+
+            // Stockage des données
+            localStorage.setItem('token', response.data.token);
+            localStorage.setItem('user', JSON.stringify(response.data.user));
+            
+            // Redirection FORCÉE vers /workspace
+            window.location.href = '/workspace'; // Solution garantie
+            
         } catch (err) {
-            const errorDetails = {
+            console.error('Erreur:', {
                 status: err.response?.status,
                 data: err.response?.data,
                 message: err.message
-            };
-            console.error('Détails de l\'erreur:', errorDetails);
+            });
             
             setError(
                 err.response?.data?.error || 
+                err.message ||
                 'Échec de la connexion. Veuillez réessayer.'
             );
         } finally {
@@ -67,6 +72,7 @@ const Login = () => {
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     required
+                                    autoFocus
                                 />
                             </div>
 
@@ -86,7 +92,12 @@ const Login = () => {
                                 className="btn btn-primary w-100"
                                 disabled={loading}
                             >
-                                {loading ? 'Connexion en cours...' : 'Se connecter'}
+                                {loading ? (
+                                    <>
+                                        <span className="spinner-border spinner-border-sm me-2"></span>
+                                        Connexion...
+                                    </>
+                                ) : 'Se connecter'}
                             </button>
                         </form>
                     </div>
